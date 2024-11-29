@@ -117,7 +117,7 @@ router.post("/", async (req, res) => {
       return res.status(404).json({ message: "Admin user not found" });
     }
 
-    const adminName = adminUser.firstname || adminUser.name || currentUser.firstname || 'Unknown Admin';
+    const adminName = adminUser.firstName || adminUser.name || currentUser.firstName || 'Unknown Admin';
 
     const newEvent = await Event.create({
       userId: currentUser._id,
@@ -228,6 +228,9 @@ router.delete("/:id", async (req, res) => {
 router.post("/:id/attend", async (req, res) => {
   const eventId = req.params.id;
   const currentUser = req.user;
+  console.log("Current User:", currentUser);
+  console.log("User Sub ID:", currentUser._id);
+
   try {
     const event = await Event.findById(eventId);
 
@@ -236,19 +239,25 @@ router.post("/:id/attend", async (req, res) => {
     }
 
     // Check if the user is already attending
+    console.log(`Checking attendance for Event ID: ${eventId}, User ID: ${currentUser._id}`);
     const existingAttendance = await EventAttendee.findOne({
       eventId,
-      userId: currentUser.sub,
+      userId: currentUser._id,
     });
 
+    console.log("Existing Attendance:", existingAttendance);
+
     if (existingAttendance) {
-      await EventAttendee.deleteOne({ eventId, userId: currentUser.sub });
+      console.log("Deleting attendance:", existingAttendance);
+      await EventAttendee.deleteOne({ eventId, userId: currentUser._id });
       return res
         .status(200)
         .json({ message: "Successfully marked as uninterested" });
     } else {
       // Check if the event has reached its limit
       const attendeeCount = await EventAttendee.countDocuments({ eventId });
+      console.log(`Current Attendee Count for Event ID ${eventId}:`, attendeeCount);
+
       if (event.limit !== 0 && attendeeCount >= event.limit) {
         return res.status(400).json({ message: "Event has reached its limit" });
       }
@@ -257,14 +266,15 @@ router.post("/:id/attend", async (req, res) => {
     // Add the user as an attendee
     const newAttendee = new EventAttendee({
       eventId,
-      userId: currentUser._id,
+      userId: currentUser._id, // Ensure you're using the correct ID property
     });
+
     await newAttendee.save();
 
     res.status(200).json({ message: "Successfully marked as attending" });
   } catch (err) {
-    console.log("Error:", err);
-    return res.status(500).json({ error: "Failed to Attend Event." });
+    console.error("Error:", err);
+    res.status(500).json({ error: "Failed to Attend Event." });
   }
 });
 
