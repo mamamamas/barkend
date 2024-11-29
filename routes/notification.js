@@ -7,7 +7,7 @@ const { encrypt, decrypt } = require("../utils/encryption");
 const mongoose = require('mongoose');
 router.post('/mark-all-read', async (req, res) => {
   try {
-    const userId = req.user.sub; // Assuming your auth middleware attaches the user to the request
+    const userId = req.user._id; // Assuming your auth middleware attaches the user to the request
     console.log(`Usersd ${userId}`);
     // Find all unread notifications for the user
     const unreadNotifications = await Notification.find({
