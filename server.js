@@ -51,8 +51,8 @@ const startServer = async () => {
     cors({
       origin:
         process.env.NODE_ENV === "production"
-          ? "https://saulus1.onrender.com"
-          : "http://192.168.1.9:8081",
+          ? "https://barkend-1.onrender.com"
+          : "mongodb://localhost:27017/",
       credentials: true,
       methods: ["GET", "POST", "PATCH", "DELETE"],
     })

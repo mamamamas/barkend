@@ -14,6 +14,7 @@ const { encrypt, decrypt } = require("../utils/encryption");
 
 router.get("/", async (req, res) => {
   const currentUser = req.user;
+  console.log(currentUser);
   try {
     const appointments = await RequestForm.find({ userId: currentUser._id })
       .sort({ timestamp: -1 })
@@ -879,27 +880,46 @@ router.post("/student-absence", upload.single("image"), async (req, res) => {
 
 // Special Leave Form
 router.post("/special-leave", async (req, res) => {
-  const currentUser = req.user;
-  const { leave, reason, additionalReason } = req.body;
-
-  //validate time
-  const currentDate = new Date();
-  const startDate = new Date(leave.startDate);
-  const endDate = new Date(leave.endDate);
-
-  if (startDate < currentDate) {
-    return res
-      .status(400)
-      .json({ message: "Start date cannot be in the past." });
-  }
-
-  if (startDate >= endDate) {
-    return res
-      .status(400)
-      .json({ message: "Start time must be before end time." });
-  }
-
   try {
+    const currentUser = req.user;
+    console.log("Request body:", JSON.stringify(req.body, null, 2));
+
+    const { leave, reason, additionalReason } = req.body;
+
+    console.log("Leave object:", JSON.stringify(leave, null, 2));
+    console.log("Reason:", reason);
+    console.log("Additional Reason:", additionalReason);
+
+    // Validate that leave object exists and has required properties
+    if (!leave || typeof leave !== 'object') {
+      return res.status(400).json({ message: "Invalid leave data provided. Leave must be an object." });
+    }
+
+    if (!leave.startDate || !leave.endDate) {
+      return res.status(400).json({ message: "Invalid leave data provided. Start date and end date are required." });
+    }
+
+    // Validate time
+    const currentDate = new Date();
+    const startDate = new Date(leave.startDate);
+    const endDate = new Date(leave.endDate);
+
+    console.log("Current Date:", currentDate);
+    console.log("Start Date:", startDate);
+    console.log("End Date:", endDate);
+
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      return res.status(400).json({ message: "Invalid date format provided." });
+    }
+
+    if (startDate < currentDate) {
+      return res.status(400).json({ message: "Start date cannot be in the past." });
+    }
+
+    if (startDate >= endDate) {
+      return res.status(400).json({ message: "Start time must be before end time." });
+    }
+
     const newAppointment = await RequestForm.create({
       userId: currentUser._id,
       formName: "Special Leave Form",
@@ -908,16 +928,22 @@ router.post("/special-leave", async (req, res) => {
       leave: { startDate, endDate },
     });
 
+    console.log("New appointment created:", JSON.stringify(newAppointment, null, 2));
+
     const userDetails = await PersonalInfo.findOne({
       userId: currentUser._id,
     }).select("firstName lastName");
 
-    //fetched all userId with role admin/staff
+    console.log("User details:", JSON.stringify(userDetails, null, 2));
+
+    // Fetched all userId with role admin/staff
     const recipientUsers = await User.find({
       role: { $in: ["admin", "staff"] },
     }).select("_id");
 
-    // Extract  IDs
+    console.log("Recipient users:", JSON.stringify(recipientUsers, null, 2));
+
+    // Extract IDs
     const recipientIds = recipientUsers.map((user) => user._id);
     const decryptedUserDetails = userDetails
       ? {
@@ -932,11 +958,13 @@ router.post("/special-leave", async (req, res) => {
       }
       : { firstName: "", lastName: "" };
 
+    console.log("Decrypted user details:", JSON.stringify(decryptedUserDetails, null, 2));
+
     // Encrypt the title with the decrypted names
     const notificationTitle = `${decryptedUserDetails.firstName} ${decryptedUserDetails.lastName} made a special leave request!`;
     const encryptedTitle = encrypt(notificationTitle);
 
-    await Notification.create({
+    const notification = await Notification.create({
       userId: currentUser._id,
       title: encryptedTitle,
       documentId: newAppointment._id,
@@ -944,32 +972,40 @@ router.post("/special-leave", async (req, res) => {
       recipientIds: recipientIds,
     });
 
+    console.log("Notification created:", JSON.stringify(notification, null, 2));
+
     return res.status(200).json(newAppointment);
   } catch (err) {
-    console.log("error: ", err);
+    console.error("Error in special leave route:", err);
+    return res.status(500).json({ message: "An internal server error occurred." });
   }
 });
-
-router.post("/telehealth", async (req, res) => {
+router.post("/telehealth", upload.none(), async (req, res) => {
   const currentUser = req.user;
   const { appointmentDate, reason, telehealthType } = req.body;
 
+  console.log('reason:', reason);  // Check if 'reason' is now present
+
+  if (!reason) {
+    return res.status(400).json({ error: 'Reason is required' });
+  }
+
+
   try {
-    const selectedDate = moment.tz(appointmentDate, "Asia/Manila");
+    const currentDate = new Date();
+    const selectedDate = new Date(appointmentDate);
 
-    const selectedDateUTC = selectedDate.clone().utc();
-
-    // Check if the appointment is in the past (in Manila timezone)
-    const currentDateInPhilippines = moment.tz("Asia/Manila");
-
-    if (selectedDate.isBefore(currentDateInPhilippines)) {
-      return res.status(400).json("Appointment cannot be in the past");
+    // Check if the selected date is in the past
+    if (selectedDate < currentDate) {
+      return res
+        .status(400)
+        .json("Appointment must be 1 day ahead and not in the past");
     }
 
     const newAppointment = await RequestForm.create({
       userId: currentUser._id,
       formName: "Telehealth",
-      appointmentDate: selectedDateUTC.toISOString(),
+      appointmentDate,
       telehealthType,
       reason,
     });

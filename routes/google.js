@@ -12,10 +12,14 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const { encrypt, decrypt } = require("../utils/encryption");
 console.log('JWT Secret:', process.env.JWT_SECRET);
 
+
+
 router.post('/auth/google', async (req, res) => {
     const { token } = req.body;
-    console.log("token: ", token);
-    console.log('Google Client ID:', process.env.GOOGLE_CLIENT_ID);
+
+    if (!token) {
+        return res.status(400).json({ success: false, error: 'Google token is missing' });
+    }
 
     try {
         // Verify Google ID token
@@ -30,89 +34,66 @@ router.post('/auth/google', async (req, res) => {
         const lastName = payload['family_name'];
         const pfp = payload['picture'];
 
-        // Check if the email ends with @pcu.edu.ph before proceeding further
-        if (!email.endsWith("@pcu.edu.ph")) {
-            console.log("Only @pcu.edu emails are allowed");
+        // Allow only @pcu.edu.ph emails
+        if (!email.endsWith('@pcu.edu.ph')) {
             return res.status(400).json({
                 success: false,
-                error: "Only @pcu.edu emails are allowed"
+                error: 'Only @pcu.edu emails are allowed',
             });
         }
 
-        // Check if the user exists in the database
+        // Check if the user exists
         let user = await User.findOne({ email });
-        console.log('User Email:', email);
-        console.log('Profile Pic:', pfp);
 
         if (!user) {
+            // Create a new user if not exists
+            user = new User({
+                googleId,
+                email,
+                pfp,
+                role: 'student',
+                firstname: firstName,
+                lastname: lastName,
+            });
+            await user.save();
+
+            // Create associated documents (handled in a separate try-catch)
             try {
-                // Create a new user if they don't exist
-                user = new User({
-                    googleId,
-                    email,
-                    pfp,
-                    role: 'student',
-                    firstname: firstName,
-                    lastname: lastName,
-                });
-                await user.save();
-
-                const encryptedUserFirstName = encrypt(firstName);
-                const encryptedUserLastName = encrypt(lastName);
-
-                // Create associated documents with default values
                 await PersonalInfo.create({
                     userId: user._id,
-                    firstName: encryptedUserFirstName,
-                    lastName: encryptedUserLastName,
+                    firstName: encrypt(firstName),
+                    lastName: encrypt(lastName),
                 });
 
-                await MedicalInfo.create({
-                    userId: user._id,
-                });
-
-                await EducationInfo.create({
-                    userId: user._id,
-                });
-                const personalInfo = await PersonalInfo.findOne({ userId: user._id });
-                if (personalInfo) {
-                    const decryptedFirstName = decrypt(personalInfo.firstName);
-                    const decryptedLastName = decrypt(personalInfo.lastName);
-                    console.log('Decrypted names:', decryptedFirstName, decryptedLastName);
-                } else {
-                    console.log('No personal info found for user:', user._id);
-                }
-
-                console.log('New user and associated documents created successfully');
-            } catch (error) {
-                console.error('Error creating new user and associated documents:', error);
-                return res.status(500).json({ success: false, error: 'Error creating user account' });
+                await MedicalInfo.create({ userId: user._id });
+                await EducationInfo.create({ userId: user._id });
+            } catch (docError) {
+                console.error('Error creating associated documents:', docError);
+                return res.status(500).json({ success: false, error: 'Error creating associated documents' });
             }
-        } else if (user.role === 'admin') {
-            return res.status(400).json({
-                success: false,
-                error: 'Student can only log in via Google',
-            });
         }
 
+        // Role adjustment for students
         if (user.role !== 'student' && user.role !== 'admin') {
             user.role = 'student';
             await user.save();
         }
 
-        // Generate JWT token for the app
+        // Generate JWT token
         const accessToken = jwt.sign(
             { sub: user.id, role: user.role, googleId: user.googleId },
             process.env.JWT_SECRET,
             { expiresIn: '30d', audience: 'Saulus', algorithm: 'HS256' }
         );
+
+        // Set cookie and send response
         res.cookie('jwtToken', accessToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days expiration
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         });
-        // Send response with the JWT token and user data
+
         res.json({
             success: true,
             token: accessToken,
@@ -122,37 +103,36 @@ router.post('/auth/google', async (req, res) => {
             username: user.email,
             pfp: user.pfp,
         });
-
     } catch (error) {
         console.error('Google login error:', error);
-        res.status(400).json({ success: false, error: 'Invalid Google token' });
+        return res.status(400).json({ success: false, error: 'Invalid Google token' });
     }
 });
 
-
-// Route to update user profile with Google data
+// Update Profile Route
 router.post('/updateProfile', async (req, res) => {
-    const userId = req.params.id
-    const { firstName, lastName, email, profilePic, googleId } = req.body;
+    const { id, firstName, lastName, email, profilePic, googleId } = req.body;
 
-    console.log(profilePic);
+    if (!id) {
+        return res.status(400).json({ success: false, error: 'User ID is required' });
+    }
+
     try {
         const updatedUser = await User.findByIdAndUpdate(
-            userId,
-            { firstName, lastName, email, profilePic, googleId },
+            id,
+            { firstname: firstName, lastname: lastName, email, pfp: profilePic, googleId },
             { new: true, upsert: true }
         );
 
         if (!updatedUser) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.status(404).json({ success: false, error: 'User not found' });
         }
 
-        res.status(200).json(updatedUser);
+        res.status(200).json({ success: true, user: updatedUser });
     } catch (error) {
         console.error('Error updating user profile:', error);
-        res.status(500).json({ message: 'Error updating user profile' });
+        res.status(500).json({ success: false, error: 'Error updating user profile' });
     }
 });
-
 
 module.exports = router;

@@ -77,6 +77,7 @@ router.get("/logout", async (req, res) => {
   }
 
   tokenBlacklist.add(token);
+  console.log('Logged out successfully')
   res.status(200).json({ message: 'Logged out successfully' });
 });
 
@@ -362,12 +363,12 @@ router.patch("/profile/:id", auth, async (req, res) => {
     const currentUser = req.user;
     const currentUserId = req.user._id;
     const { personal, education, medical } = req.body;
-
+    console.log(`User ${userId} and current user ${currentUserId}`)
     // Check for authorization
     if (
       currentUser.role !== "admin" &&
       currentUser.role !== "staff" &&
-      currentUserId !== userId
+      currentUserId === userId
     ) {
       return res.status(403).json({ error: "Not authorized" });
     }
