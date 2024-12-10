@@ -218,7 +218,7 @@ router.get("/health", async (req, res) => {
     const medicalInfo = await MedicalInfo.find().select(
       "circulatory heart respiratory allergy specificAllergy lungs psychological specificPsychological"
     );
-
+    console.log("medicalInfo: ", medicalInfo);
     // Decrypt and filter the medical data
     const filteredMedicalData = medicalInfo
       .map((record) => {
@@ -254,7 +254,7 @@ router.get("/health", async (req, res) => {
               : null,
           specificPsychological:
             record.specificPsychological !== "N/A" &&
-            record.specificPsychological
+              record.specificPsychological
               ? decrypt(record.specificPsychological)
               : null,
         };
@@ -292,10 +292,10 @@ router.get("/health", async (req, res) => {
             record.specificAllergy !== null &&
             record.specificAllergy !== undefined)
         ) {
-          if (!acc["Allrgey"]) {
-            acc["Allrgey"] = 0;
+          if (!acc["Allergy"]) {
+            acc["Allergy"] = 0;
           }
-          acc["Allrgey"]++;
+          acc["Allergy"]++;
         }
         if (
           record.lungs !== "N/A" &&
